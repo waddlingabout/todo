@@ -1,3 +1,37 @@
+
 body {
-    background-color: aliceblue;
+  font-family: "JetBrains Mono", monospace;
+  font-optical-sizing: auto;
+  font-weight: 800;
+  font-style: normal;
+
+  display:flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+}
+h1{
+    color:turquoise;
+}
+
+.unchecked{
+    color:darkviolet;
+}
+.checked{
+    color:coral;
+}
+
+.unchecked::marker {
+    
+    content: "[ ] ";
+    font-weight: 800;
+    font-size: 1.2rem;
+    
+}
+.checked::marker {
+    content: "[x] ";
+    font-weight: 800;
+    font-size: 1.2rem;
+    
 }
