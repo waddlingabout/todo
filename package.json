@@ -1,0 +1,23 @@
+{
+  "name": "todo",
+  "version": "1.0.0",
+  "description": "a todo app",
+  "homepage": "https://github.com/waddlingabout/todo#readme",
+  "bugs": {
+    "url": "https://github.com/waddlingabout/todo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waddlingabout/todo.git"
+  },
+  "license": "ISC",
+  "author": "Erik Nylander",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
