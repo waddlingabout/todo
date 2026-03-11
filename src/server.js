@@ -59,7 +59,7 @@ app.post("/api/login",loginLimiter, async (req, res) =>{
             return res.status(403).json({});
         }
         return res.status(200).json({"key": process.env.KEY});
-    }catch{
+    }catch(e){
         return res.status(400).json({
             "ok": false,
             "error": e.message 
