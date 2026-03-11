@@ -14,7 +14,7 @@ const loginLimiter = rateLimit({
 });
 
 const verifyApiKey = (req, res, next) => {
-    const providedKey = req.headers['x-api-key'];
+    const providedKey = req.headers['x-api-key'] || req.query.key;
 
     const expectedKey = process.env.KEY;
 
@@ -134,6 +134,29 @@ app.get("/api/list", verifyApiKey, async (req, res) => {
 
 });
 
+let clients = [];
+
+app.get("/api/stream",verifyApiKey, async (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const initialData = await addToReadQueue();
+    res.write(`data: ${JSON.stringify(initialData)}\n\n`);
+
+    clients.push(res);
+
+    req.on('close', () => {
+        clients = clients.filter(client => client !== res);
+    });
+});
+
+async function broadcast() {
+    const data = await addToReadQueue();
+    const message = `data: ${JSON.stringify(data)}\n\n`;
+    clients.forEach(client => client.write(message));
+}
+
 app.listen(PORT, () => {
     try{
         var fun = fs.readFileSync(path.join(__dirname,"data.json"))
@@ -188,7 +211,7 @@ function addToWriteQueue(value){
 
     operation = () => writeJson(value, false);
 
-    const current = queue.then(operation);
+    const current = queue.then(operation).then(broadcast);
 
     queue = current.catch((err) => {
         console.error("Queue error:", err);
@@ -202,7 +225,7 @@ function addToRemoveQueue(idx){
     
     operation = () => removeJson(idx);
 
-    const current = queue.then(operation);
+    const current = queue.then(operation).then(broadcast);
 
     queue = current.catch((err) => {
         console.error("Queue error:", err);
@@ -213,7 +236,7 @@ function addToRemoveQueue(idx){
 function addToCheckQueue(key){
     const operation = () => writeJsonCheck(key);
 
-    const current = queue.then(operation);
+    const current = queue.then(operation).then(broadcast);
 
     queue = current.catch((err) => {
         console.error("Queue error:", err);

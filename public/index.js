@@ -16,18 +16,16 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById("list").hidden = false;
             const apiKey = loginresult.key;
 
-            setInterval(() => {
-                fetch('/api/list', {
-                    method: 'GET',
-                    headers: {
-                        'x-api-key': apiKey,
-                        'Content-Type': 'application/json' 
-                    }
-                })
-                    .then(response => response.json())
-                    .then(data => updateUI(data))
-                    .catch(error => console.error(error));
-            }, 1000);
+            const eventSource = new EventSource(`/api/stream?key=${apiKey}`);
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateUI(data); 
+            };
+
+            eventSource.onerror = (error) => {
+                console.error("SSE connection lost. Reconnecting...");
+            };
         }
 
     })
