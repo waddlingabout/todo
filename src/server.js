@@ -1,26 +1,77 @@
-import { error } from 'console';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'node:fs';
-import { appendFile } from 'node:fs/promises';
+import { config } from 'dotenv';
+import rateLimit from 'express-rate-limit';
+import { profileEnd } from 'node:console';
+
+config();
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, 
+    max: 5, 
+    message: { "error": "Too many login attempts, please try again later." }
+});
+
+const verifyApiKey = (req, res, next) => {
+    const providedKey = req.headers['x-api-key'];
+
+    const expectedKey = process.env.KEY;
+
+    if (!providedKey || providedKey !== expectedKey) {
+        return res.status(401).json({ 
+            ok: false, 
+            error: "Unauthorized: Invalid or missing API key" 
+        });
+    }
+    next();
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3021;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
 let queue = Promise.resolve();
 
+/*
+ * api calls:
+    {data: index}
 
-app.post("/api/add", async (req, res) => {
+    or
+
+    {data: content}
+ */
+
+
+
+app.post("/api/login",loginLimiter, async (req, res) =>{
+
+    try{
+        const pass = req.body.password;
+
+        if (pass != process.env.PASSWORD){
+
+            return res.status(403).json({});
+        }
+        return res.status(200).json({"key": process.env.KEY});
+    }catch{
+        return res.status(400).json({
+            "ok": false,
+            "error": e.message 
+        });
+    }
+
+});
+
+app.post("/api/add", verifyApiKey, async (req, res) => {
     try {
         const validatedData = validateAdd(req.body);
-        await addToWriteQueue(validatedData.id,validatedData.content, true);
+        await addToWriteQueue(validatedData.content);
 
         return res.status(200).json({
             "ok": true
@@ -35,10 +86,10 @@ app.post("/api/add", async (req, res) => {
 });
 
 
-app.post("/api/rem", async (req, res) => {
+app.post("/api/rem", verifyApiKey, async (req, res) => {
     try {
-        const validatedData = validateRem(req.body);
-        await addToWriteQueue(validatedData.id,"", false);
+        const validatedIndex = validateIdx(req.body);
+        await addToRemoveQueue(validatedIndex.id);
 
         return res.status(200).json({
             "ok": true
@@ -52,10 +103,10 @@ app.post("/api/rem", async (req, res) => {
     }
 });
 
-app.post("/api/chk", async (req, res) => {
+app.post("/api/chk", verifyApiKey, async (req, res) => {
     try {
-        const validatedData = validateRem(req.body);
-        await addToCheckQueue(validatedData.id,"");
+        const validatedIndex = validateIdx(req.body);
+        await addToCheckQueue(validatedIndex.id);
 
         return res.status(200).json({
             "ok": true
@@ -69,7 +120,7 @@ app.post("/api/chk", async (req, res) => {
     }
 });
 
-app.get("/api/list", async (req, res) => {
+app.get("/api/list", verifyApiKey, async (req, res) => {
     try{
 
         let json = await addToReadQueue();
@@ -90,7 +141,7 @@ app.listen(PORT, () => {
     }
     catch (e){
         console.error(e.message);
-        fs.writeFileSync(path.join(__dirname,"data.json"), JSON.stringify({}));
+        fs.writeFileSync(path.join(__dirname,"data.json"), JSON.stringify([]));
 
     }
     console.log(`Server running on http://localhost:${PORT}`);
@@ -98,44 +149,58 @@ app.listen(PORT, () => {
 
 function validateAdd(inputData) {
     const isObject = typeof inputData === 'object' && inputData !== null && !Array.isArray(inputData);
-    
-    if (!isObject) throw new Error("Request body must be an object");
+
+    if (!isObject) throw new Error('bad request: expected { "data": "string" }');
 
     const keys = Object.keys(inputData);
 
-    if (keys.length === 1 && typeof inputData[keys[0]] === 'string') {
-        const id = keys[0];
-        const content = inputData[id];
+    if (keys.length === 1 && keys[0] === 'data' && typeof inputData['data'] === 'string') {
+        const id = keys[0]; 
+        const content = inputData[id]; 
+
         return { id, content };
     } else {
-        throw new Error("bad request: expected {id: 'string'}");
+        throw new Error('bad request: expected { "data": "string" }');
     }
 }
-function validateRem(inputData) {
+
+function validateIdx(inputData) {
     const isObject = typeof inputData === 'object' && inputData !== null && !Array.isArray(inputData);
     
     if (!isObject) throw new Error("Request body must be an object");
 
     const keys = Object.keys(inputData);
 
-    if (keys.length === 1) {
-        const id = keys[0];
-        const content = inputData[id];
-        return { id, content };
+    if (keys.length === 1 && keys[0] === 'data' && typeof inputData.data === 'string') {
+        
+        const id = inputData.data; 
+        
+        return { id };
     } else {
-        throw new Error("bad request: expected {id}");
+        throw new Error('bad request: expected { "data": "idx" }');
     }
 }
 
-function addToWriteQueue(key, value, mode){
+
+function addToWriteQueue(value){
 
     let operation;
-    if(mode){
-        operation = () => writeJson(key, {content: value, checked: false});
 
-    } else{
-        operation = () => removeJson(key, value);
-    }
+    operation = () => writeJson(value, false);
+
+    const current = queue.then(operation);
+
+    queue = current.catch((err) => {
+        console.error("Queue error:", err);
+    });
+    return current;
+}
+
+function addToRemoveQueue(idx){
+
+    let operation;
+    
+    operation = () => removeJson(idx);
 
     const current = queue.then(operation);
 
@@ -166,40 +231,58 @@ function addToReadQueue(){
     return current;
 }
 
-function writeJson(key, value) {
-    const filePath = path.join(__dirname,"data.json");//path.join(__dirname, 'data.json');
-    const olddata = fs.readFileSync(filePath);
-    let json = JSON.parse(olddata);
+// reading & writing
+function writeJson(content, checked) {
+    const filePath = path.join(__dirname, "data.json");
+    
+    const fileData = fs.readFileSync(filePath);
+    let jsonArray = JSON.parse(fileData); 
 
-    json[key] = value;
+    jsonArray.push({ 
+        content: content, 
+        checked: checked 
+    });
 
-    fs.writeFileSync(filePath,JSON.stringify(json));
-}
-function writeJsonCheck(key) {
-    const filePath = path.join(__dirname,"data.json");//path.join(__dirname, 'data.json');
-    const olddata = fs.readFileSync(filePath);
-    let json = JSON.parse(olddata);
-
-    var checked = json[key].checked;
-    json[key].checked = !checked;
-
-    fs.writeFileSync(filePath,JSON.stringify(json));
+    fs.writeFileSync(filePath, JSON.stringify(jsonArray, null, 2));
 }
 
-function removeJson(key, value) {
-    const filePath = path.join(__dirname,"data.json");//path.join(__dirname, 'data.json');
-    const olddata = fs.readFileSync(filePath);
-    let json = JSON.parse(olddata);
+function writeJsonCheck(indexToCheck) {
+    const filePath = path.join(__dirname, "data.json");
+    
+    const fileData = fs.readFileSync(filePath);
+    let jsonArray = JSON.parse(fileData); 
 
-    delete json[key];
+    if (jsonArray[indexToCheck]) {
 
-    fs.writeFileSync(filePath,JSON.stringify(json));
+        jsonArray[indexToCheck].checked = !jsonArray[indexToCheck].checked;
+    }
+    else{
+        throw new Error("index doesn't exist");
+    }
+
+    fs.writeFileSync(filePath, JSON.stringify(jsonArray, null, 2));
+}
+
+function removeJson(indexToDelete) {
+    const filePath = path.join(__dirname, "data.json");
+    const fileData = fs.readFileSync(filePath);
+    let jsonArray = JSON.parse(fileData);
+
+
+    if (jsonArray[indexToDelete]) {
+        jsonArray.splice(indexToDelete, 1);
+    }
+    else{
+        throw new Error("index doesn't exist");
+    }
+
+    fs.writeFileSync(filePath, JSON.stringify(jsonArray, null, 2));
 }
 
 function readJson(){
-    const filePath = path.join(__dirname,"data.json");//path.join(__dirname, 'data.json');
+    const filePath = path.join(__dirname,"data.json");
     const olddata = fs.readFileSync(filePath);
-    let json = JSON.parse(olddata);
+    let jsonArray = JSON.parse(olddata);
 
-    return json;
+    return jsonArray;
 }

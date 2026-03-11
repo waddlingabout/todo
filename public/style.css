@@ -14,6 +14,21 @@ body {
 h1{
     color:turquoise;
 }
+form input, form button{
+    font-size: 1rem;
+    border: 2px solid darkgray;
+    border-radius: 5px;
+    padding: 5px;
+}
+form button:hover{
+    font-size: 1rem;
+    border: 2px solid black;
+    background-color: black;
+    font-weight: 800;
+    color:white;
+    border-radius: 5px;
+    padding: 5px;
+}
 
 .unchecked{
     color:darkviolet;
